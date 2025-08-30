@@ -7,7 +7,7 @@ use winit::{
 };
 
 /// SafeMirror: The core structure that handles GPU rendering and screen capture
-/// 
+///
 /// GPU CONCEPTS EXPLAINED:
 /// - Surface: The connection between our app and the window where pixels get drawn
 /// - Device: Represents the GPU hardware we're using (Metal on macOS)
@@ -19,32 +19,32 @@ struct SafeMirror {
     /// Surface: The "canvas" where we draw pixels - connects our app to the window
     /// Think of this as the link between GPU rendering and what users see on screen
     surface: wgpu::Surface<'static>,
-    
+
     /// Device: Represents the GPU hardware (Metal on macOS)
     /// This is our interface to the graphics card - handles all GPU operations
     device: wgpu::Device,
-    
+
     /// Queue: The command queue for sending instructions to the GPU
     /// We submit drawing commands here and GPU executes them in order
     queue: wgpu::Queue,
-    
+
     /// Config: Settings for how the surface should behave (resolution, color format, etc.)
     /// Tells the GPU what format to use when drawing to the window
     config: wgpu::SurfaceConfiguration,
-    
+
     /// Size: Current window dimensions in pixels
     /// Used to handle window resizing and coordinate mapping
     size: winit::dpi::PhysicalSize<u32>,
-    
+
     /// Render Pipeline: The complete set of instructions for drawing
     /// This defines HOW the GPU should process our screen capture data into visible pixels
     /// Includes both vertex shader (positioning) and fragment shader (coloring)
     render_pipeline: wgpu::RenderPipeline,
-    
+
     /// Texture: GPU memory holding our screen capture image data
     /// This is where we store the captured screen content that gets displayed
     texture: wgpu::Texture,
-    
+
     /// Bind Group: Collection of resources (texture + sampler) that shaders can access
     /// This packages our screen texture so the shader can read from it
     bind_group: wgpu::BindGroup,
@@ -55,7 +55,7 @@ impl SafeMirror {
     /// This initializes the entire rendering pipeline from scratch
     async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
-        
+
         // STEP 1: Create wgpu instance - this is our entry point to GPU programming
         // wgpu is a Rust library that provides safe access to GPU APIs (Metal, Vulkan, DirectX)
         // We specify Metal backend because we're on macOS and want direct access to Apple's GPU API
@@ -76,7 +76,7 @@ impl SafeMirror {
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance, // Prefer faster GPU over power saving
                 compatible_surface: Some(&surface), // Must be able to draw to our window
-                force_fallback_adapter: false, // Don't force software rendering
+                force_fallback_adapter: false,      // Don't force software rendering
             })
             .await
             .unwrap();
@@ -89,7 +89,7 @@ impl SafeMirror {
                 &wgpu::DeviceDescriptor {
                     required_features: wgpu::Features::empty(), // No special GPU features needed
                     required_limits: wgpu::Limits::default(),   // Use standard GPU limits
-                    label: None, // Optional debug name
+                    label: None,                                // Optional debug name
                 },
                 None, // No trace path for debugging
             )
@@ -99,7 +99,7 @@ impl SafeMirror {
         // STEP 5: Configure the surface for drawing
         // Get capabilities: What color formats, present modes the GPU supports
         let surface_caps = surface.get_capabilities(&adapter);
-        
+
         // Choose sRGB color format if available (standard for displays)
         // sRGB ensures colors look correct on most monitors
         let surface_format = surface_caps
@@ -112,13 +112,13 @@ impl SafeMirror {
         // Surface configuration: How the GPU should draw to our window
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // We'll draw directly to this surface
-            format: surface_format, // Color format (usually RGBA or BGRA)
-            width: size.width,   // Window width in pixels
-            height: size.height, // Window height in pixels
-            present_mode: surface_caps.present_modes[0], // How to sync with display refresh
-            alpha_mode: surface_caps.alpha_modes[0],     // How to handle transparency
-            view_formats: vec![], // Additional formats (none needed)
-            desired_maximum_frame_latency: 2, // Buffer 2 frames max for responsiveness
+            format: surface_format,                        // Color format (usually RGBA or BGRA)
+            width: size.width,                             // Window width in pixels
+            height: size.height,                           // Window height in pixels
+            present_mode: surface_caps.present_modes[0],   // How to sync with display refresh
+            alpha_mode: surface_caps.alpha_modes[0],       // How to handle transparency
+            view_formats: vec![],                          // Additional formats (none needed)
+            desired_maximum_frame_latency: 2,              // Buffer 2 frames max for responsiveness
         };
         surface.configure(&device, &config);
 
@@ -127,7 +127,7 @@ impl SafeMirror {
         // Think of this as a bitmap/image that lives on the GPU
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: 1920,  // Fixed resolution for now (will be dynamic later)
+                width: 1920, // Fixed resolution for now (will be dynamic later)
                 height: 1080,
                 depth_or_array_layers: 1, // 2D texture (not 3D or array)
             },
@@ -139,13 +139,13 @@ impl SafeMirror {
             // TEXTURE_BINDING: Shaders can read from this texture
             // COPY_DST: We can write screen capture data into this texture
             label: Some("Screen Capture Texture"), // Debug name
-            view_formats: &[], // No additional view formats needed
+            view_formats: &[],                     // No additional view formats needed
         });
 
         // STEP 7: Create texture view - this is how shaders access the texture
         // A "view" is like a window into the texture data that shaders can read from
         let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         // STEP 8: Create sampler - controls how the GPU reads pixels from the texture
         // When the shader asks for a pixel, the sampler decides how to interpolate/filter
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -153,9 +153,9 @@ impl SafeMirror {
             address_mode_u: wgpu::AddressMode::ClampToEdge, // Clamp to edge pixels horizontally
             address_mode_v: wgpu::AddressMode::ClampToEdge, // Clamp to edge pixels vertically
             address_mode_w: wgpu::AddressMode::ClampToEdge, // Not used for 2D textures
-            
+
             // Filter modes: How to blend pixels when scaling
-            mag_filter: wgpu::FilterMode::Linear,  // Smooth when zooming in (linear interpolation)
+            mag_filter: wgpu::FilterMode::Linear, // Smooth when zooming in (linear interpolation)
             min_filter: wgpu::FilterMode::Nearest, // Crisp when zooming out (pick nearest pixel)
             mipmap_filter: wgpu::FilterMode::Nearest, // No mipmaps, so this doesn't matter
             ..Default::default()
@@ -169,10 +169,10 @@ impl SafeMirror {
                 entries: &[
                     // Binding 0: The texture containing screen capture data
                     wgpu::BindGroupLayoutEntry {
-                        binding: 0, // This maps to @binding(0) in the shader
+                        binding: 0,                               // This maps to @binding(0) in the shader
                         visibility: wgpu::ShaderStages::FRAGMENT, // Only fragment shader needs this
                         ty: wgpu::BindingType::Texture {
-                            multisampled: false, // Not using anti-aliasing
+                            multisampled: false,                            // Not using anti-aliasing
                             view_dimension: wgpu::TextureViewDimension::D2, // 2D texture
                             sample_type: wgpu::TextureSampleType::Float { filterable: true }, // Can interpolate
                         },
@@ -180,7 +180,7 @@ impl SafeMirror {
                     },
                     // Binding 1: The sampler that controls how to read the texture
                     wgpu::BindGroupLayoutEntry {
-                        binding: 1, // This maps to @binding(1) in the shader
+                        binding: 1,                               // This maps to @binding(1) in the shader
                         visibility: wgpu::ShaderStages::FRAGMENT, // Only fragment shader needs this
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), // Can filter/interpolate
                         count: None, // Single sampler
@@ -232,7 +232,7 @@ impl SafeMirror {
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
-            
+
             // VERTEX STAGE: Handles positioning and geometry
             // In our case, we create a fullscreen triangle (single large triangle)
             vertex: wgpu::VertexState {
@@ -241,41 +241,41 @@ impl SafeMirror {
                 buffers: &[],           // No vertex buffers (we generate positions in shader)
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
-            
+
             // FRAGMENT STAGE: Handles pixel coloring
             // For each pixel, this stage decides what color it should be
             fragment: Some(wgpu::FragmentState {
                 module: &shader,        // Use our compiled shader
                 entry_point: "fs_main", // Function name in shader.wgsl
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format, // Must match surface format
+                    format: config.format,                  // Must match surface format
                     blend: Some(wgpu::BlendState::REPLACE), // Don't blend, just replace pixels
-                    write_mask: wgpu::ColorWrites::ALL, // Write to all color channels (RGBA)
+                    write_mask: wgpu::ColorWrites::ALL,     // Write to all color channels (RGBA)
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
-            
+
             // PRIMITIVE SETTINGS: How to interpret vertex data
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList, // Draw triangles
-                strip_index_format: None, // Not using indexed triangles
+                strip_index_format: None,                        // Not using indexed triangles
                 front_face: wgpu::FrontFace::Ccw, // Counter-clockwise triangles face forward
                 cull_mode: Some(wgpu::Face::Back), // Don't draw back-facing triangles
                 polygon_mode: wgpu::PolygonMode::Fill, // Fill triangles (not wireframe)
-                unclipped_depth: false, // Use normal depth clipping
-                conservative: false, // No conservative rasterization
+                unclipped_depth: false,           // Use normal depth clipping
+                conservative: false,              // No conservative rasterization
             },
-            
+
             // DEPTH/STENCIL: Not needed for 2D screen mirroring
             depth_stencil: None,
-            
+
             // MULTISAMPLING: Anti-aliasing settings (disabled for performance)
             multisample: wgpu::MultisampleState {
-                count: 1,    // No multisampling
-                mask: !0,    // All samples enabled
+                count: 1,                         // No multisampling
+                mask: !0,                         // All samples enabled
                 alpha_to_coverage_enabled: false, // No alpha-to-coverage
             },
-            
+
             // MULTIVIEW: For VR/stereo rendering (not needed)
             multiview: None,
         });
@@ -306,9 +306,9 @@ impl SafeMirror {
     }
 
     /// Updates the screen capture texture with new image data
-    /// 
+    ///
     /// CURRENT STATE: Creates test pattern (will be replaced with real screen capture)
-    /// 
+    ///
     /// HOW TEXTURES WORK:
     /// - Texture is like a 2D array of pixels stored on GPU
     /// - Each pixel has 4 values: Red, Green, Blue, Alpha (RGBA)
@@ -325,13 +325,26 @@ impl SafeMirror {
                 let pixel_index = i / 4; // Which pixel we're at (0 to 1920*1080-1)
                 let row = pixel_index / 1920; // Which row (Y coordinate)
                 let stripe = row % 20; // Create 20-pixel tall stripes
-                
-                match i % 4 { // Which color channel (0=R, 1=G, 2=B, 3=A)
-                    0 => if stripe < 10 { 255 } else { 0 },   // Red channel: bright for first 10 stripes
-                    1 => if stripe >= 10 { 255 } else { 0 },  // Green channel: bright for last 10 stripes  
-                    2 => 100,  // Blue channel: dim blue for all pixels
-                    3 => 255,  // Alpha channel: fully opaque
-                    _ => 0,    // This should never happen
+
+                match i % 4 {
+                    // Which color channel (0=R, 1=G, 2=B, 3=A)
+                    0 => {
+                        if stripe < 10 {
+                            255
+                        } else {
+                            0
+                        }
+                    } // Red channel: bright for first 10 stripes
+                    1 => {
+                        if stripe >= 10 {
+                            255
+                        } else {
+                            0
+                        }
+                    } // Green channel: bright for last 10 stripes
+                    2 => 100, // Blue channel: dim blue for all pixels
+                    3 => 255, // Alpha channel: fully opaque
+                    _ => 0,   // This should never happen
                 }
             })
             .collect();
@@ -341,31 +354,29 @@ impl SafeMirror {
         self.queue.write_texture(
             // WHERE to write: target texture and location
             wgpu::ImageCopyTexture {
-                texture: &self.texture, // Our screen capture texture
-                mip_level: 0,           // Level 0 (full resolution, not a smaller mipmap)
-                origin: wgpu::Origin3d::ZERO, // Start at top-left corner (0,0,0)
+                texture: &self.texture,           // Our screen capture texture
+                mip_level: 0,                     // Level 0 (full resolution, not a smaller mipmap)
+                origin: wgpu::Origin3d::ZERO,     // Start at top-left corner (0,0,0)
                 aspect: wgpu::TextureAspect::All, // Update all color channels
             },
             &texture_data, // WHAT to write: our pixel data array
-            
             // HOW the data is laid out in memory
             wgpu::ImageDataLayout {
-                offset: 0, // Start at beginning of data array
+                offset: 0,                     // Start at beginning of data array
                 bytes_per_row: Some(1920 * 4), // Each row is 1920 pixels * 4 bytes per pixel
-                rows_per_image: Some(1080),     // Image has 1080 rows
+                rows_per_image: Some(1080),    // Image has 1080 rows
             },
-            
             // SIZE of the region we're updating
             wgpu::Extent3d {
-                width: 1920,  // Update full width
-                height: 1080, // Update full height
+                width: 1920,              // Update full width
+                height: 1080,             // Update full height
                 depth_or_array_layers: 1, // Single 2D image (not 3D or array)
             },
         );
     }
 
     /// Renders one frame to the screen
-    /// 
+    ///
     /// THE RENDERING PROCESS:
     /// 1. Get the next frame buffer from the surface (where pixels will go)
     /// 2. Create command encoder (records GPU commands)
@@ -378,7 +389,7 @@ impl SafeMirror {
         // STEP 1: Get the next frame buffer to draw into
         // This is the actual memory where our pixels will go
         let output = self.surface.get_current_texture()?;
-        
+
         // Create a view of the frame buffer for rendering
         // Views define how we want to interpret the texture data
         let view = output
@@ -398,24 +409,24 @@ impl SafeMirror {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
-                
+
                 // Color attachments: Where we draw pixels (the screen)
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view, // Draw to our frame buffer
+                    view: &view,          // Draw to our frame buffer
                     resolve_target: None, // No multisampling, so no resolve needed
                     ops: wgpu::Operations {
                         // Clear the screen to dark blue before drawing
                         // This ensures we start with a known background color
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: 0.1, // Dark red
-                            g: 0.2, // Dark green  
+                            g: 0.2, // Dark green
                             b: 0.3, // Dark blue
                             a: 1.0, // Fully opaque
                         }),
                         store: wgpu::StoreOp::Store, // Save the results to memory
                     },
                 })],
-                
+
                 // We don't need depth testing for 2D screen mirroring
                 depth_stencil_attachment: None,
                 occlusion_query_set: None, // Not measuring occlusion
@@ -425,7 +436,7 @@ impl SafeMirror {
             // STEP 4: Set up the render pass for drawing
             render_pass.set_pipeline(&self.render_pipeline); // Use our screen mirror pipeline
             render_pass.set_bind_group(0, &self.bind_group, &[]); // Bind texture+sampler
-            
+
             // STEP 5: Draw the geometry
             // draw(vertices, instances) - we draw 3 vertices (1 large triangle), 1 instance
             // The vertex shader generates positions for a fullscreen triangle
@@ -436,7 +447,7 @@ impl SafeMirror {
         // STEP 6: Submit commands to GPU for execution
         // All the commands we recorded are sent to GPU as a batch
         self.queue.submit(std::iter::once(encoder.finish()));
-        
+
         // STEP 7: Present the frame to the screen
         // This makes our rendered pixels visible in the window
         output.present();
@@ -461,12 +472,14 @@ impl ApplicationHandler for App {
         // Create the main window
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes()
-                    .with_title("CloakShare - Safe Mirror") // Window title
-                    .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))) // Initial size
+                .create_window(
+                    Window::default_attributes()
+                        .with_title("CloakShare - Safe Mirror") // Window title
+                        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720)),
+                ) // Initial size
                 .unwrap(),
         );
-        
+
         // Store window reference and initialize GPU rendering
         self.window = Some(window.clone());
         // pollster::block_on converts async function to sync (required for this context)
@@ -474,42 +487,47 @@ impl ApplicationHandler for App {
     }
 
     /// Handles all window events (resize, close, redraw, etc.)
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: WindowId, event: WindowEvent) {
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
         if let Some(safe_mirror) = &mut self.safe_mirror {
             match event {
                 // User clicked X button or pressed Cmd+Q
                 WindowEvent::CloseRequested => event_loop.exit(),
-                
+
                 // User resized the window
                 WindowEvent::Resized(physical_size) => {
                     safe_mirror.resize(physical_size);
                 }
-                
+
                 // System requests a redraw (60fps or when window needs updating)
                 WindowEvent::RedrawRequested => {
                     // Update screen capture data (currently test pattern)
                     safe_mirror.update_screen_capture();
-                    
+
                     // Render the frame to the screen
                     match safe_mirror.render() {
-                        Ok(_) => {}, // Successful render
-                        
+                        Ok(_) => {} // Successful render
+
                         // Handle common GPU errors gracefully
                         Err(wgpu::SurfaceError::Lost) => {
                             // GPU lost surface, try to recreate it
                             safe_mirror.resize(safe_mirror.size)
-                        },
+                        }
                         Err(wgpu::SurfaceError::OutOfMemory) => {
                             // GPU out of memory, exit app
                             event_loop.exit()
-                        },
+                        }
                         Err(e) => eprintln!("Render error: {e:?}"),
                     }
                 }
                 _ => {} // Ignore other events
             }
         }
-        
+
         // Request continuous redraws for smooth animation
         // This creates our 60fps render loop
         if let Some(window) = &self.window {
@@ -521,10 +539,10 @@ impl ApplicationHandler for App {
 /// Main function: Entry point of the application
 fn main() {
     println!("Starting CloakShare Safe Mirror...");
-    
+
     // Create the main event loop (handles window events, user input, etc.)
     let event_loop = EventLoop::new().unwrap();
-    
+
     // Create our app instance
     let mut app = App {
         safe_mirror: None, // Will be initialized when window is created
