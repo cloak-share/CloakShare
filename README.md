@@ -249,3 +249,29 @@ npm run tauri   # grant Screen Recording when prompted
 ---
 
 Questions or contributions? Open an issue titled **[MVP]** with steps to reproduce and your device specs (macOS version, CPU/GPU).
+
+Building & Running
+
+- Build: cargo run or cargo build --release
+- Output: You'll see a native macOS window (the "Safe Mirror") that shows your screen content
+- Permission: First run will prompt for Screen Recording permission in System Settings
+
+Visual Feedback
+
+- Safe Mirror Window: This is your main output - a separate window that mirrors your selected display/window
+- Testing: Share this Safe Mirror window in Zoom/Meet/Teams to verify what others see
+- Overlays: Black boxes will appear directly on the Safe Mirror (not on your actual screen)
+
+Debugging ScreenCaptureKit
+
+- Console logs: SCStream callbacks can log frame rates, buffer info
+- Metal debugger: Xcode → Debug → Graphics → Metal (capture GPU workload)
+- Frame timing: Log timestamps between capture → render to measure latency
+- Permission issues: Check Console.app for ScreenCaptureKit errors
+
+Testing Strategy
+
+1. Manual: Open apps with fake PII (terminal with fake API keys, browser with fake emails)
+2. Visual verification: See if black boxes appear over sensitive content in the Safe Mirror
+3. Screen share test: Actually share the Safe Mirror in a video call to confirm others see redacted content
+4. Performance: Monitor Activity Monitor for CPU/GPU usage during capture
