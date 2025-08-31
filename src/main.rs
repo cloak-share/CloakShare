@@ -1,4 +1,23 @@
-use std::sync::Arc;
+use core_foundation::base::TCFType;
+use core_video_sys::{
+    CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight,
+    CVPixelBufferGetPixelFormatType, CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress,
+    CVPixelBufferLockFlags, CVPixelBufferRef, CVPixelBufferUnlockBaseAddress,
+    kCVPixelBufferLock_ReadOnly, kCVPixelFormatType_32BGRA,
+};
+use screencapturekit::{
+    output::CMSampleBuffer,
+    shareable_content::SCShareableContent,
+    stream::{
+        SCStream,
+        configuration::SCStreamConfiguration,
+        configuration::pixel_format::PixelFormat,
+        content_filter::SCContentFilter,
+        output_trait::SCStreamOutputTrait, // <- new
+        output_type::SCStreamOutputType,
+    },
+};
+use std::sync::{Arc, Mutex};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -48,6 +67,12 @@ struct SafeMirror {
     /// Bind Group: Collection of resources (texture + sampler) that shaders can access
     /// This packages our screen texture so the shader can read from it
     bind_group: wgpu::BindGroup,
+
+    /// Screen capture stream for real-time capture
+    screen_stream: Option<SCStream>,
+
+    /// Latest captured frame data shared between capture callback and render thread
+    latest_frame: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 impl SafeMirror {
@@ -59,7 +84,7 @@ impl SafeMirror {
         // STEP 1: Create wgpu instance - this is our entry point to GPU programming
         // wgpu is a Rust library that provides safe access to GPU APIs (Metal, Vulkan, DirectX)
         // We specify Metal backend because we're on macOS and want direct access to Apple's GPU API
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::METAL, // Use Apple's Metal API for best macOS performance
             ..Default::default()
         });
@@ -85,14 +110,13 @@ impl SafeMirror {
         // Device: Our handle to the GPU for creating resources (textures, shaders, etc.)
         // Queue: Where we submit commands to be executed by the GPU
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(), // No special GPU features needed
-                    required_limits: wgpu::Limits::default(),   // Use standard GPU limits
-                    label: None,                                // Optional debug name
-                },
-                None, // No trace path for debugging
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(), // No special GPU features needed
+                required_limits: wgpu::Limits::default(),   // Use standard GPU limits
+                label: None,                                // Optional debug name
+                memory_hints: wgpu::MemoryHints::Performance,
+                trace: wgpu::Trace::Off,
+            })
             .await
             .unwrap();
 
@@ -229,6 +253,15 @@ impl SafeMirror {
         // STEP 13: Create the render pipeline - the complete drawing program
         // This combines vertex shader, fragment shader, and all settings into one object
         // The pipeline defines the ENTIRE process of turning data into pixels
+        // TODO: enable pipeline caching - for now we are having some runtime errors
+        // let pipeline_cache = unsafe {
+        //     device.create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+        //         label: Some("Main Pipeline Cache"),
+        //         data: None,
+        //         fallback: true,
+        //     })
+        // };
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -236,17 +269,17 @@ impl SafeMirror {
             // VERTEX STAGE: Handles positioning and geometry
             // In our case, we create a fullscreen triangle (single large triangle)
             vertex: wgpu::VertexState {
-                module: &shader,        // Use our compiled shader
-                entry_point: "vs_main", // Function name in shader.wgsl
-                buffers: &[],           // No vertex buffers (we generate positions in shader)
+                module: &shader,              // Use our compiled shader
+                entry_point: Some("vs_main"), // Function name in shader.wgsl
+                buffers: &[],                 // No vertex buffers (we generate positions in shader)
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
 
             // FRAGMENT STAGE: Handles pixel coloring
             // For each pixel, this stage decides what color it should be
             fragment: Some(wgpu::FragmentState {
-                module: &shader,        // Use our compiled shader
-                entry_point: "fs_main", // Function name in shader.wgsl
+                module: &shader,              // Use our compiled shader
+                entry_point: Some("fs_main"), // Function name in shader.wgsl
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,                  // Must match surface format
                     blend: Some(wgpu::BlendState::REPLACE), // Don't blend, just replace pixels
@@ -278,9 +311,14 @@ impl SafeMirror {
 
             // MULTIVIEW: For VR/stereo rendering (not needed)
             multiview: None,
+            // TOOD: Enable pipeline caching
+            // cache: Some(&pipeline_cache),
+            cache: None,
         });
 
-        Self {
+        let latest_frame = Arc::new(Mutex::new(None));
+
+        let mut instance = Self {
             surface,
             device,
             queue,
@@ -289,7 +327,52 @@ impl SafeMirror {
             render_pipeline,
             texture,
             bind_group,
-        }
+            screen_stream: None,
+            latest_frame: latest_frame.clone(),
+        };
+
+        // Set up screen capture
+        instance.setup_screen_capture();
+
+        instance
+    }
+
+    /// Sets up ScreenCaptureKit to capture the main display in real-time
+    fn setup_screen_capture(&mut self) {
+        // Pull shareable content + pick the main display
+        let shareable = SCShareableContent::get().expect("Failed to get SCShareableContent");
+        let display = shareable
+            .displays()
+            .first()
+            .expect("No displays found")
+            .clone();
+
+        // Build a content filter for the display (no excluded windows)
+        let filter = SCContentFilter::new().with_display_excluding_windows(&display, &[]);
+
+        // Configure the stream (builder-style API)
+        let config = SCStreamConfiguration::new()
+            .set_width(1920)
+            .unwrap()
+            .set_height(1080)
+            .unwrap()
+            .set_captures_audio(false)
+            .unwrap()
+            .set_pixel_format(PixelFormat::BGRA)
+            .unwrap();
+
+        // Handlers
+        let output_handler = ScreenCaptureOutputHandler {
+            frame_data: self.latest_frame.clone(),
+        };
+
+        // Create stream, add output, start
+        let mut stream = SCStream::new(&filter, &config);
+        stream.add_output_handler(output_handler, SCStreamOutputType::Screen);
+        stream.start_capture().unwrap();
+
+        self.screen_stream = Some(stream);
+        println!("Screen capture started!");
     }
 
     /// Handles window resizing by updating GPU surface configuration
@@ -315,64 +398,65 @@ impl SafeMirror {
     /// - Values range from 0-255 (8-bit per channel)
     /// - Data is stored as a flat array: [R,G,B,A, R,G,B,A, R,G,B,A, ...]
     fn update_screen_capture(&mut self) {
-        // Create test pattern: alternating red and green horizontal stripes
-        // This helps us verify that:
-        // 1. GPU texture uploading works
-        // 2. Rendering pipeline displays correctly
-        // 3. Colors are correct (not swapped or corrupted)
-        let texture_data: Vec<u8> = (0..1920 * 1080 * 4) // 1920x1080 pixels * 4 bytes per pixel (RGBA)
+        if let Ok(guard) = self.latest_frame.lock() {
+            if guard.is_none() {
+                eprintln!("latest_frame was None");
+            }
+        }
+        // Get latest captured frame or fall back to test pattern
+        let texture_data = self
+            .latest_frame
+            .lock()
+            .ok() // ignore poisoned mutex
+            .and_then(|guard| guard.clone()) // clone the Option<T>
+            .unwrap_or_else(|| self.create_test_pattern());
+
+        // Upload texture data from CPU memory to GPU memory
+        self.queue.write_texture(
+            self.texture.as_image_copy(),
+            &texture_data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(1920 * 4),
+                rows_per_image: Some(1080),
+            },
+            wgpu::Extent3d {
+                width: 1920,
+                height: 1080,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    /// Creates test pattern as fallback when no screen capture is available
+    fn create_test_pattern(&self) -> Vec<u8> {
+        (0..1920 * 1080 * 4)
             .map(|i| {
-                let pixel_index = i / 4; // Which pixel we're at (0 to 1920*1080-1)
-                let row = pixel_index / 1920; // Which row (Y coordinate)
-                let stripe = row % 20; // Create 20-pixel tall stripes
+                let pixel_index = i / 4;
+                let row = pixel_index / 1920;
+                let stripe = row % 20;
 
                 match i % 4 {
-                    // Which color channel (0=R, 1=G, 2=B, 3=A)
                     0 => {
                         if stripe < 10 {
                             255
                         } else {
                             0
                         }
-                    } // Red channel: bright for first 10 stripes
+                    }
                     1 => {
                         if stripe >= 10 {
                             255
                         } else {
                             0
                         }
-                    } // Green channel: bright for last 10 stripes
-                    2 => 100, // Blue channel: dim blue for all pixels
-                    3 => 255, // Alpha channel: fully opaque
-                    _ => 0,   // This should never happen
+                    }
+                    2 => 100,
+                    3 => 255,
+                    _ => 0,
                 }
             })
-            .collect();
-
-        // Upload texture data from CPU memory to GPU memory
-        // This is how we get our screen capture data onto the GPU for rendering
-        self.queue.write_texture(
-            // WHERE to write: target texture and location
-            wgpu::ImageCopyTexture {
-                texture: &self.texture,           // Our screen capture texture
-                mip_level: 0,                     // Level 0 (full resolution, not a smaller mipmap)
-                origin: wgpu::Origin3d::ZERO,     // Start at top-left corner (0,0,0)
-                aspect: wgpu::TextureAspect::All, // Update all color channels
-            },
-            &texture_data, // WHAT to write: our pixel data array
-            // HOW the data is laid out in memory
-            wgpu::ImageDataLayout {
-                offset: 0,                     // Start at beginning of data array
-                bytes_per_row: Some(1920 * 4), // Each row is 1920 pixels * 4 bytes per pixel
-                rows_per_image: Some(1080),    // Image has 1080 rows
-            },
-            // SIZE of the region we're updating
-            wgpu::Extent3d {
-                width: 1920,              // Update full width
-                height: 1080,             // Update full height
-                depth_or_array_layers: 1, // Single 2D image (not 3D or array)
-            },
-        );
+            .collect()
     }
 
     /// Renders one frame to the screen
@@ -412,7 +496,8 @@ impl SafeMirror {
 
                 // Color attachments: Where we draw pixels (the screen)
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,          // Draw to our frame buffer
+                    view: &view, // Draw to our frame buffer
+                    depth_slice: None,
                     resolve_target: None, // No multisampling, so no resolve needed
                     ops: wgpu::Operations {
                         // Clear the screen to dark blue before drawing
@@ -552,4 +637,148 @@ fn main() {
     // Start the event loop - this runs until the app closes
     // The event loop continuously calls our window_event handler
     event_loop.run_app(&mut app).unwrap();
+}
+
+/// Output handler for ScreenCaptureKit frames
+struct ScreenCaptureOutputHandler {
+    frame_data: Arc<Mutex<Option<Vec<u8>>>>,
+}
+
+impl SCStreamOutputTrait for ScreenCaptureOutputHandler {
+    fn did_output_sample_buffer(
+        &self,
+        sample_buffer: CMSampleBuffer,
+        output_type: SCStreamOutputType,
+    ) {
+        if matches!(output_type, SCStreamOutputType::Screen) {
+            if let Some(rgba_data) = convert_sample_buffer_to_rgba(&sample_buffer) {
+                if let Ok(mut latest) = self.frame_data.lock() {
+                    *latest = Some(rgba_data);
+                }
+            }
+        }
+    }
+}
+
+/// Converts ScreenCaptureKit CMSampleBuffer (chunky BGRA) -> RGBA 1920x1080.
+/// Returns None if the buffer isn't BGRA or if locking/base address fails.
+fn convert_sample_buffer_to_rgba(sample_buffer: &CMSampleBuffer) -> Option<Vec<u8>> {
+    // 1) Get CVPixelBuffer
+    let pixel_buffer = sample_buffer.get_pixel_buffer().ok()?;
+    let pixel_buffer_rs = pixel_buffer.as_concrete_TypeRef(); // *mut __CVPixelBufferRef (rs)
+    let pixel_buffer_ref = pixel_buffer_rs.cast(); // We cast __CVPixelBufferRef to *mut __CVBuffer (sys)
+
+    // 2) Lock for read
+    let lock_flags = kCVPixelBufferLock_ReadOnly;
+    let lock_result = unsafe { CVPixelBufferLockBaseAddress(pixel_buffer_ref, lock_flags) };
+    if lock_result != 0 {
+        eprintln!("Failed to lock CVPixelBuffer");
+        return None;
+    }
+
+    // Helper to ensure unlock on early returns
+    struct Unlock<'a> {
+        pb: CVPixelBufferRef,
+        flags: u64,
+        _m: std::marker::PhantomData<&'a ()>,
+    }
+    impl<'a> Drop for Unlock<'a> {
+        fn drop(&mut self) {
+            unsafe { CVPixelBufferUnlockBaseAddress(self.pb, self.flags) };
+        }
+    }
+    let _unlock_guard = Unlock {
+        pb: pixel_buffer_ref,
+        flags: lock_flags,
+        _m: std::marker::PhantomData,
+    };
+
+    // 3) Read properties
+    let width = unsafe { CVPixelBufferGetWidth(pixel_buffer_ref) } as usize;
+    let height = unsafe { CVPixelBufferGetHeight(pixel_buffer_ref) } as usize;
+    let bytes_per_row = unsafe { CVPixelBufferGetBytesPerRow(pixel_buffer_ref) } as usize;
+    let pixel_format = unsafe { CVPixelBufferGetPixelFormatType(pixel_buffer_ref) };
+    println!("{pixel_format}");
+    if pixel_format != kCVPixelFormatType_32BGRA {
+        eprintln!(
+            "Unexpected pixel format: {}, expected kCVPixelFormatType_32BGRA",
+            pixel_format
+        );
+        return None; // _unlock_guard will unlock
+    }
+
+    // 4) Base address -> slice
+    let base_ptr = unsafe { CVPixelBufferGetBaseAddress(pixel_buffer_ref) } as *const u8;
+    if base_ptr.is_null() {
+        eprintln!("CVPixelBuffer base address is null");
+        return None;
+    }
+
+    // Sanity check: bytes_per_row must be >= width*4 for BGRA
+    let min_bpr = width.checked_mul(4)?;
+    if bytes_per_row < min_bpr {
+        eprintln!("bytes_per_row ({bytes_per_row}) < width*4 ({min_bpr})");
+        return None;
+    }
+
+    let src_len = bytes_per_row.checked_mul(height)?;
+    let src = unsafe { std::slice::from_raw_parts(base_ptr, src_len) };
+
+    // 5) Prepare destination RGBA 1920x1080
+    const TARGET_W: usize = 1920;
+    const TARGET_H: usize = 1080;
+    let mut dst = vec![0u8; TARGET_W * TARGET_H * 4];
+
+    // Fast path: same size (no scaling), just swizzle BGRA -> RGBA per pixel.
+    if width == TARGET_W && height == TARGET_H {
+        for y in 0..TARGET_H {
+            let src_row = &src[y * bytes_per_row..y * bytes_per_row + TARGET_W * 4];
+            let dst_row = &mut dst[y * TARGET_W * 4..(y + 1) * TARGET_W * 4];
+
+            // Iterate per pixel
+            for x in 0..TARGET_W {
+                let si = x * 4;
+                let di = x * 4;
+                // BGRA -> RGBA
+                let b = src_row[si + 0];
+                let g = src_row[si + 1];
+                let r = src_row[si + 2];
+                let a = src_row[si + 3];
+
+                dst_row[di + 0] = r;
+                dst_row[di + 1] = g;
+                dst_row[di + 2] = b;
+                dst_row[di + 3] = a;
+            }
+        }
+        return Some(dst); // unlock via guard
+    }
+
+    // Nearest-neighbor scaling + BGRA -> RGBA swizzle
+    let scale_x = width as f32 / TARGET_W as f32;
+    let scale_y = height as f32 / TARGET_H as f32;
+
+    for y in 0..TARGET_H {
+        let src_y = ((y as f32 * scale_y) as usize).min(height.saturating_sub(1));
+        let src_row_base = src_y * bytes_per_row;
+
+        for x in 0..TARGET_W {
+            let src_x = ((x as f32 * scale_x) as usize).min(width.saturating_sub(1));
+
+            let si = src_row_base + src_x * 4;
+            let di = (y * TARGET_W + x) * 4;
+
+            let b = src[si + 0];
+            let g = src[si + 1];
+            let r = src[si + 2];
+            let a = src[si + 3];
+
+            dst[di + 0] = r;
+            dst[di + 1] = g;
+            dst[di + 2] = b;
+            dst[di + 3] = a;
+        }
+    }
+
+    Some(dst)
 }
