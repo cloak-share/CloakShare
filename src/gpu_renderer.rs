@@ -11,10 +11,12 @@ pub struct GpuRenderer {
     pub render_pipeline: wgpu::RenderPipeline,
     pub bind_group: wgpu::BindGroup,
     pub texture: wgpu::Texture,
+    pub capture_width: u32,
+    pub capture_height: u32,
 }
 
 impl GpuRenderer {
-    pub async fn new(window: Arc<Window>) -> Self {
+    pub async fn new(window: Arc<Window>, capture_width: u32, capture_height: u32) -> Self {
         let size = window.inner_size();
 
         // STEP 1: Create wgpu instance - this is our entry point to GPU programming
@@ -87,8 +89,8 @@ impl GpuRenderer {
         // Think of this as a bitmap/image that lives on the GPU
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: 1920, // Fixed resolution for now (will be dynamic later)
-                height: 1080,
+                width: capture_width, // Dynamic resolution based on actual display
+                height: capture_height,
                 depth_or_array_layers: 1, // 2D texture (not 3D or array)
             },
             mip_level_count: 1, // No mipmaps (smaller versions for distance rendering)
@@ -250,6 +252,8 @@ impl GpuRenderer {
             render_pipeline,
             bind_group,
             texture,
+            capture_width,
+            capture_height,
         }
     }
 
@@ -272,12 +276,12 @@ impl GpuRenderer {
             texture_data,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(1920 * 4),
-                rows_per_image: Some(1080),
+                bytes_per_row: Some(self.capture_width * 4),
+                rows_per_image: Some(self.capture_height),
             },
             wgpu::Extent3d {
-                width: 1920,
-                height: 1080,
+                width: self.capture_width,
+                height: self.capture_height,
                 depth_or_array_layers: 1,
             },
         );
@@ -365,6 +369,6 @@ impl GpuRenderer {
     }
 
     pub fn create_test_pattern(&self) -> Vec<u8> {
-        vec![64u8; 1920 * 1080 * 4] // Dark gray fallback
+        vec![64u8; (self.capture_width * self.capture_height * 4) as usize] // Dark gray fallback
     }
 }

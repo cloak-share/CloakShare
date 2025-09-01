@@ -7,7 +7,7 @@ use core_video_sys::{
 };
 use screencapturekit::output::CMSampleBuffer;
 
-/// Converts ScreenCaptureKit CMSampleBuffer (chunky BGRA) -> RGBA 1920x1080.
+/// Converts ScreenCaptureKit CMSampleBuffer (chunky BGRA) -> RGBA at native resolution.
 /// Returns None if the buffer isn't BGRA or if locking/base address fails.
 pub fn convert_sample_buffer_to_rgba(sample_buffer: &CMSampleBuffer) -> Option<Vec<u8>> {
     // 1) Get CVPixelBuffer
@@ -71,59 +71,28 @@ pub fn convert_sample_buffer_to_rgba(sample_buffer: &CMSampleBuffer) -> Option<V
     let src_len = bytes_per_row.checked_mul(height)?;
     let src = unsafe { std::slice::from_raw_parts(base_ptr, src_len) };
 
-    // 5) Prepare destination RGBA 1920x1080
-    const TARGET_W: usize = 1920;
-    const TARGET_H: usize = 1080;
-    let mut dst = vec![0u8; TARGET_W * TARGET_H * 4];
+    // 5) Use native resolution (no scaling needed)
+    let mut dst = vec![0u8; width * height * 4];
 
-    // Fast path: same size (no scaling), just swizzle BGRA -> RGBA per pixel.
-    if width == TARGET_W && height == TARGET_H {
-        for y in 0..TARGET_H {
-            let src_row = &src[y * bytes_per_row..y * bytes_per_row + TARGET_W * 4];
-            let dst_row = &mut dst[y * TARGET_W * 4..(y + 1) * TARGET_W * 4];
+    // Convert BGRA -> RGBA per pixel at native resolution
+    for y in 0..height {
+        let src_row = &src[y * bytes_per_row..y * bytes_per_row + width * 4];
+        let dst_row = &mut dst[y * width * 4..(y + 1) * width * 4];
 
-            // Iterate per pixel
-            for x in 0..TARGET_W {
-                let si = x * 4;
-                let di = x * 4;
-                // BGRA -> RGBA
-                let b = src_row[si + 0];
-                let g = src_row[si + 1];
-                let r = src_row[si + 2];
-                let a = src_row[si + 3];
+        // Iterate per pixel
+        for x in 0..width {
+            let si = x * 4;
+            let di = x * 4;
+            // BGRA -> RGBA
+            let b = src_row[si + 0];
+            let g = src_row[si + 1];
+            let r = src_row[si + 2];
+            let a = src_row[si + 3];
 
-                dst_row[di + 0] = r;
-                dst_row[di + 1] = g;
-                dst_row[di + 2] = b;
-                dst_row[di + 3] = a;
-            }
-        }
-        return Some(dst); // unlock via guard
-    }
-
-    // Nearest-neighbor scaling + BGRA -> RGBA swizzle
-    let scale_x = width as f32 / TARGET_W as f32;
-    let scale_y = height as f32 / TARGET_H as f32;
-
-    for y in 0..TARGET_H {
-        let src_y = ((y as f32 * scale_y) as usize).min(height.saturating_sub(1));
-        let src_row_base = src_y * bytes_per_row;
-
-        for x in 0..TARGET_W {
-            let src_x = ((x as f32 * scale_x) as usize).min(width.saturating_sub(1));
-
-            let si = src_row_base + src_x * 4;
-            let di = (y * TARGET_W + x) * 4;
-
-            let b = src[si + 0];
-            let g = src[si + 1];
-            let r = src[si + 2];
-            let a = src[si + 3];
-
-            dst[di + 0] = r;
-            dst[di + 1] = g;
-            dst[di + 2] = b;
-            dst[di + 3] = a;
+            dst_row[di + 0] = r;
+            dst_row[di + 1] = g;
+            dst_row[di + 2] = b;
+            dst_row[di + 3] = a;
         }
     }
 

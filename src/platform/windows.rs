@@ -1,4 +1,6 @@
-use crate::platform::traits::{PixelConverter, ScreenCapture, ScreenCaptureFactory};
+use crate::platform::traits::{
+    DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory,
+};
 use std::sync::{Arc, Mutex};
 
 /// Windows implementation (placeholder - not implemented)
@@ -15,6 +17,10 @@ impl WindowsScreenCapture {
 }
 
 impl ScreenCapture for WindowsScreenCapture {
+    fn get_display_resolution(&self) -> Result<DisplayResolution, String> {
+        Err("Windows display resolution detection not implemented yet".to_string())
+    }
+
     fn start_capture(&mut self) -> Result<(), String> {
         Err("Windows screen capture not implemented yet".to_string())
     }

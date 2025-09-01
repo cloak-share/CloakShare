@@ -1,11 +1,21 @@
 use std::sync::{Arc, Mutex};
 
+/// Display resolution information
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayResolution {
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Platform-specific screen capture capabilities
 pub trait ScreenCapture {
-    /// Start capturing the primary display
+    /// Get the primary display resolution
+    fn get_display_resolution(&self) -> Result<DisplayResolution, String>;
+
+    /// Start capturing the primary display at its native resolution
     fn start_capture(&mut self) -> Result<(), String>;
 
-    /// Get the latest captured frame as RGBA data (1920x1080x4 bytes)
+    /// Get the latest captured frame as RGBA data (width*height*4 bytes)
     fn get_latest_frame(&self) -> Option<Vec<u8>>;
 
     /// Stop screen capture
