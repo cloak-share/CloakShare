@@ -1,4 +1,6 @@
-use crate::platform::traits::{DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory};
+use crate::platform::traits::{
+    DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory,
+};
 use std::sync::{Arc, Mutex};
 
 /// Linux implementation (placeholder - not implemented)

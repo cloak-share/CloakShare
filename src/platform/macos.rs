@@ -1,5 +1,7 @@
 use crate::pixel_conversion::convert_sample_buffer_to_rgba;
-use crate::platform::traits::{DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory};
+use crate::platform::traits::{
+    DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory,
+};
 use screencapturekit::{
     output::CMSampleBuffer,
     shareable_content::SCShareableContent,
@@ -34,13 +36,11 @@ impl ScreenCapture for MacOSScreenCapture {
             .map_err(|e| format!("Failed to get SCShareableContent: {:?}", e))?;
 
         let displays = shareable.displays();
-        let display = displays
-            .first()
-            .ok_or("No displays found")?;
+        let display = displays.first().ok_or("No displays found")?;
 
         let width = display.width();
         let height = display.height();
-        
+
         Ok(DisplayResolution { width, height })
     }
 
@@ -61,8 +61,11 @@ impl ScreenCapture for MacOSScreenCapture {
             height: display.height(),
         };
         self.display_resolution = Some(resolution);
-        
-        println!("Capturing display at {}x{}", resolution.width, resolution.height);
+
+        println!(
+            "Capturing display at {}x{}",
+            resolution.width, resolution.height
+        );
 
         // Build a content filter for the display
         let filter = SCContentFilter::new().with_display_excluding_windows(&display, &[]);

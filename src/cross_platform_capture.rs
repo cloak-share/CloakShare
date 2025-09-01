@@ -75,7 +75,7 @@ impl CrossPlatformScreenCapture {
     pub fn get_display_resolution(&self) -> Result<DisplayResolution, String> {
         self.capture.get_display_resolution()
     }
-    
+
     /// Start capturing the screen
     pub fn start_capture(&mut self) -> Result<(), String> {
         self.capture.start_capture()

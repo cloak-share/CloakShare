@@ -11,7 +11,7 @@ pub struct DisplayResolution {
 pub trait ScreenCapture {
     /// Get the primary display resolution
     fn get_display_resolution(&self) -> Result<DisplayResolution, String>;
-    
+
     /// Start capturing the primary display at its native resolution
     fn start_capture(&mut self) -> Result<(), String>;
 

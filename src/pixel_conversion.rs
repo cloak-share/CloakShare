@@ -81,13 +81,13 @@ pub fn convert_sample_buffer_to_rgba(sample_buffer: &CMSampleBuffer) -> Option<V
 
         // Iterate per pixel
         for x in 0..width {
-                let si = x * 4;
-                let di = x * 4;
-                // BGRA -> RGBA
-                let b = src_row[si + 0];
-                let g = src_row[si + 1];
-                let r = src_row[si + 2];
-                let a = src_row[si + 3];
+            let si = x * 4;
+            let di = x * 4;
+            // BGRA -> RGBA
+            let b = src_row[si + 0];
+            let g = src_row[si + 1];
+            let r = src_row[si + 2];
+            let a = src_row[si + 3];
 
             dst_row[di + 0] = r;
             dst_row[di + 1] = g;
