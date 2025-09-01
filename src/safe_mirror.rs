@@ -16,9 +16,19 @@ impl SafeMirror {
     /// Creates a new SafeMirror instance with full GPU setup
     /// This initializes the entire rendering pipeline from scratch
     pub async fn new(window: Arc<Window>) -> Self {
-        let gpu_renderer = GpuRenderer::new(window).await;
         let mut screen_capture = CrossPlatformScreenCapture::new()
             .expect("Failed to create cross-platform screen capture");
+        
+        // Get the actual display resolution
+        let resolution = screen_capture.get_display_resolution()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to get display resolution: {}, using fallback", e);
+                crate::platform::DisplayResolution { width: 1920, height: 1080 }
+            });
+        
+        println!("Display resolution: {}x{}", resolution.width, resolution.height);
+        
+        let gpu_renderer = GpuRenderer::new(window, resolution.width, resolution.height).await;
 
         if let Err(e) = screen_capture.start_capture() {
             eprintln!("Failed to start screen capture: {}", e);

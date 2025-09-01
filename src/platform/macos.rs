@@ -1,5 +1,5 @@
 use crate::pixel_conversion::convert_sample_buffer_to_rgba;
-use crate::platform::traits::{PixelConverter, ScreenCapture, ScreenCaptureFactory};
+use crate::platform::traits::{DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory};
 use screencapturekit::{
     output::CMSampleBuffer,
     shareable_content::SCShareableContent,
@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 pub struct MacOSScreenCapture {
     latest_frame: Arc<Mutex<Option<Vec<u8>>>>,
     stream: Option<SCStream>,
+    display_resolution: Option<DisplayResolution>,
 }
 
 impl MacOSScreenCapture {
@@ -22,11 +23,27 @@ impl MacOSScreenCapture {
         Self {
             latest_frame: Arc::new(Mutex::new(None)),
             stream: None,
+            display_resolution: None,
         }
     }
 }
 
 impl ScreenCapture for MacOSScreenCapture {
+    fn get_display_resolution(&self) -> Result<DisplayResolution, String> {
+        let shareable = SCShareableContent::get()
+            .map_err(|e| format!("Failed to get SCShareableContent: {:?}", e))?;
+
+        let displays = shareable.displays();
+        let display = displays
+            .first()
+            .ok_or("No displays found")?;
+
+        let width = display.width();
+        let height = display.height();
+        
+        Ok(DisplayResolution { width, height })
+    }
+
     fn start_capture(&mut self) -> Result<(), String> {
         // Get shareable content + pick the main display
         let shareable = SCShareableContent::get()
@@ -38,14 +55,23 @@ impl ScreenCapture for MacOSScreenCapture {
             .ok_or("No displays found")?
             .clone();
 
+        // Get actual display resolution
+        let resolution = DisplayResolution {
+            width: display.width(),
+            height: display.height(),
+        };
+        self.display_resolution = Some(resolution);
+        
+        println!("Capturing display at {}x{}", resolution.width, resolution.height);
+
         // Build a content filter for the display
         let filter = SCContentFilter::new().with_display_excluding_windows(&display, &[]);
 
-        // Configure the stream
+        // Configure the stream with actual display resolution
         let config = SCStreamConfiguration::new()
-            .set_width(1920)
+            .set_width(resolution.width)
             .map_err(|e| format!("Failed to set width: {:?}", e))?
-            .set_height(1080)
+            .set_height(resolution.height)
             .map_err(|e| format!("Failed to set height: {:?}", e))?
             .set_captures_audio(false)
             .map_err(|e| format!("Failed to set audio: {:?}", e))?

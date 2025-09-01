@@ -1,4 +1,4 @@
-use crate::platform::traits::{PixelConverter, ScreenCapture, ScreenCaptureFactory};
+use crate::platform::traits::{DisplayResolution, PixelConverter, ScreenCapture, ScreenCaptureFactory};
 use std::sync::{Arc, Mutex};
 
 /// Linux implementation (placeholder - not implemented)
@@ -15,6 +15,10 @@ impl LinuxScreenCapture {
 }
 
 impl ScreenCapture for LinuxScreenCapture {
+    fn get_display_resolution(&self) -> Result<DisplayResolution, String> {
+        Err("Linux display resolution detection not implemented yet".to_string())
+    }
+
     fn start_capture(&mut self) -> Result<(), String> {
         Err("Linux screen capture not implemented yet".to_string())
     }
