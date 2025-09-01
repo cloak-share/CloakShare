@@ -1,9 +1,12 @@
+mod cross_platform_capture;
 mod gpu_renderer;
 mod pixel_conversion;
+mod platform;
+mod platform_detector;
 mod safe_mirror;
 mod screen_capture;
 
-use crate::safe_mirror::SafeMirror;
+use crate::{platform_detector::PlatformDetector, safe_mirror::SafeMirror};
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -92,6 +95,17 @@ impl ApplicationHandler for App {
 /// Main function: Entry point of the application
 fn main() {
     println!("Starting CloakShare Safe Mirror...");
+
+    // Check platform support before proceeding
+    match PlatformDetector::check_support() {
+        Ok(platform) => {
+            println!("✓ Running on supported platform: {:?}", platform);
+        }
+        Err(e) => {
+            eprintln!("✗ Platform not supported:\n{}", e);
+            std::process::exit(1);
+        }
+    }
 
     // Create the main event loop (handles window events, user input, etc.)
     let event_loop = EventLoop::new().unwrap();
