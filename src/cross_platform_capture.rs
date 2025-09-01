@@ -77,8 +77,11 @@ impl CrossPlatformScreenCapture {
     }
 
     /// Start capturing the screen
-    pub fn start_capture(&mut self) -> Result<(), String> {
-        self.capture.start_capture()
+    pub fn start_capture(
+        &mut self,
+        exclude_window: Option<&winit::window::Window>,
+    ) -> Result<(), String> {
+        self.capture.start_capture(exclude_window)
     }
 
     /// Get the latest captured frame

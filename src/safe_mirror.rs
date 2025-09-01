@@ -30,9 +30,10 @@ impl SafeMirror {
             resolution.width, resolution.height
         );
 
-        let gpu_renderer = GpuRenderer::new(window, resolution.width, resolution.height).await;
+        let gpu_renderer =
+            GpuRenderer::new(window.clone(), resolution.width, resolution.height).await;
 
-        if let Err(e) = screen_capture.start_capture() {
+        if let Err(e) = screen_capture.start_capture(Some(&window)) {
             eprintln!("Failed to start screen capture: {}", e);
         }
 

@@ -13,7 +13,10 @@ pub trait ScreenCapture {
     fn get_display_resolution(&self) -> Result<DisplayResolution, String>;
 
     /// Start capturing the primary display at its native resolution
-    fn start_capture(&mut self) -> Result<(), String>;
+    fn start_capture(
+        &mut self,
+        exclude_window: Option<&winit::window::Window>,
+    ) -> Result<(), String>;
 
     /// Get the latest captured frame as RGBA data (width*height*4 bytes)
     fn get_latest_frame(&self) -> Option<Vec<u8>>;
