@@ -2,11 +2,10 @@ mod cross_platform_capture;
 mod gpu_renderer;
 mod pixel_conversion;
 mod platform;
-mod platform_detector;
 mod safe_mirror;
 mod screen_capture;
 
-use crate::{platform_detector::PlatformDetector, safe_mirror::SafeMirror};
+use crate::safe_mirror::SafeMirror;
 use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
@@ -22,27 +21,50 @@ struct App {
     safe_mirror: Option<SafeMirror>,
     /// The window handle (None until created)
     window: Option<Arc<Window>>,
+    /// Screen capture (created early for resolution detection)
+    screen_capture: Option<crate::cross_platform_capture::CrossPlatformScreenCapture>,
 }
 
 impl ApplicationHandler for App {
     /// Called when the app starts up or resumes
     /// This is where we create our window and initialize GPU rendering
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        // Create the main window
+        // Create screen capture first for resolution detection
+        let mut screen_capture = crate::cross_platform_capture::CrossPlatformScreenCapture::new()
+            .expect("Failed to create screen capture");
+
+        // Get display resolution for window sizing
+        let resolution = screen_capture.get_display_resolution().unwrap_or_else(|e| {
+            eprintln!("Failed to get display resolution: {}, using fallback", e);
+            crate::platform::DisplayResolution {
+                width: 1280,
+                height: 720,
+            }
+        });
+
+        // Create the main window sized to match display resolution
         let window = Arc::new(
             event_loop
                 .create_window(
                     Window::default_attributes()
                         .with_title("CloakShare - Safe Mirror") // Window title
-                        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720)),
-                ) // Initial size
+                        .with_inner_size(winit::dpi::LogicalSize::new(
+                            resolution.width,
+                            resolution.height,
+                        )),
+                ) // Size to match display
                 .unwrap(),
         );
 
-        // Store window reference and initialize GPU rendering
+        // Store references and initialize GPU rendering
         self.window = Some(window.clone());
+        self.screen_capture = Some(screen_capture);
+
         // pollster::block_on converts async function to sync (required for this context)
-        self.safe_mirror = Some(pollster::block_on(SafeMirror::new(window)));
+        self.safe_mirror = Some(pollster::block_on(SafeMirror::new(
+            window,
+            self.screen_capture.take().unwrap(),
+        )));
     }
 
     /// Handles all window events (resize, close, redraw, etc.)
@@ -96,24 +118,14 @@ impl ApplicationHandler for App {
 fn main() {
     println!("Starting CloakShare Safe Mirror...");
 
-    // Check platform support before proceeding
-    match PlatformDetector::check_support() {
-        Ok(platform) => {
-            println!("✓ Running on supported platform: {:?}", platform);
-        }
-        Err(e) => {
-            eprintln!("✗ Platform not supported:\n{}", e);
-            std::process::exit(1);
-        }
-    }
-
     // Create the main event loop (handles window events, user input, etc.)
     let event_loop = EventLoop::new().unwrap();
 
     // Create our app instance
     let mut app = App {
-        safe_mirror: None, // Will be initialized when window is created
-        window: None,      // Will be created in resumed()
+        safe_mirror: None,    // Will be initialized when window is created
+        window: None,         // Will be created in resumed()
+        screen_capture: None, // Will be created in resumed()
     };
 
     // Start the event loop - this runs until the app closes
