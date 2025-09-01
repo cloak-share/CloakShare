@@ -58,6 +58,7 @@ impl ScreenCapture for MacOSScreenCapture {
         // Create output handler
         let output_handler = MacOSScreenCaptureOutputHandler {
             frame_data: self.latest_frame.clone(),
+            converter: MacOSPixelConverter,
         };
 
         // Create stream, add output, start
@@ -122,6 +123,7 @@ impl PixelConverter for MacOSPixelConverter {
 /// Output handler for ScreenCaptureKit frames on macOS
 struct MacOSScreenCaptureOutputHandler {
     frame_data: Arc<Mutex<Option<Vec<u8>>>>,
+    converter: MacOSPixelConverter,
 }
 
 impl SCStreamOutputTrait for MacOSScreenCaptureOutputHandler {
@@ -131,7 +133,7 @@ impl SCStreamOutputTrait for MacOSScreenCaptureOutputHandler {
         output_type: SCStreamOutputType,
     ) {
         if matches!(output_type, SCStreamOutputType::Screen) {
-            if let Some(rgba_data) = convert_sample_buffer_to_rgba(&sample_buffer) {
+            if let Some(rgba_data) = self.converter.convert_to_rgba(&sample_buffer) {
                 if let Ok(mut latest) = self.frame_data.lock() {
                     *latest = Some(rgba_data);
                 }

@@ -24,7 +24,7 @@ pub trait ScreenCaptureFactory {
 }
 
 /// Platform-specific pixel format conversion
-pub trait PixelConverter {
+pub trait PixelConverter: Send + Sync {
     /// Convert platform-specific buffer to RGBA format
     fn convert_to_rgba(&self, buffer: &dyn std::any::Any) -> Option<Vec<u8>>;
 }
