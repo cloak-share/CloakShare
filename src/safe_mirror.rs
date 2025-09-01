@@ -1,4 +1,4 @@
-use crate::{gpu_renderer::GpuRenderer, screen_capture::ScreenCaptureManager};
+use crate::{cross_platform_capture::CrossPlatformScreenCapture, gpu_renderer::GpuRenderer};
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -8,8 +8,8 @@ pub struct SafeMirror {
     /// GPU renderer handles all wgpu operations
     gpu_renderer: GpuRenderer,
 
-    /// Screen capture manager handles ScreenCaptureKit integration
-    screen_capture: ScreenCaptureManager,
+    /// Cross-platform screen capture manager
+    screen_capture: CrossPlatformScreenCapture,
 }
 
 impl SafeMirror {
@@ -17,7 +17,8 @@ impl SafeMirror {
     /// This initializes the entire rendering pipeline from scratch
     pub async fn new(window: Arc<Window>) -> Self {
         let gpu_renderer = GpuRenderer::new(window).await;
-        let mut screen_capture = ScreenCaptureManager::new();
+        let mut screen_capture = CrossPlatformScreenCapture::new()
+            .expect("Failed to create cross-platform screen capture");
 
         if let Err(e) = screen_capture.start_capture() {
             eprintln!("Failed to start screen capture: {}", e);
