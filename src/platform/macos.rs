@@ -1,14 +1,11 @@
 use crate::pixel_conversion::convert_sample_buffer_to_rgba;
-use crate::platform::traits::{ScreenCapture, ScreenCaptureFactory, PixelConverter};
+use crate::platform::traits::{PixelConverter, ScreenCapture, ScreenCaptureFactory};
 use screencapturekit::{
     output::CMSampleBuffer,
     shareable_content::SCShareableContent,
     stream::{
-        SCStream,
-        configuration::SCStreamConfiguration,
-        configuration::pixel_format::PixelFormat,
-        content_filter::SCContentFilter,
-        output_trait::SCStreamOutputTrait,
+        SCStream, configuration::SCStreamConfiguration, configuration::pixel_format::PixelFormat,
+        content_filter::SCContentFilter, output_trait::SCStreamOutputTrait,
         output_type::SCStreamOutputType,
     },
 };
@@ -34,7 +31,7 @@ impl ScreenCapture for MacOSScreenCapture {
         // Get shareable content + pick the main display
         let shareable = SCShareableContent::get()
             .map_err(|e| format!("Failed to get SCShareableContent: {:?}", e))?;
-        
+
         let display = shareable
             .displays()
             .first()
@@ -64,7 +61,8 @@ impl ScreenCapture for MacOSScreenCapture {
         // Create stream, add output, start
         let mut stream = SCStream::new(&filter, &config);
         stream.add_output_handler(output_handler, SCStreamOutputType::Screen);
-        stream.start_capture()
+        stream
+            .start_capture()
             .map_err(|e| format!("Failed to start capture: {:?}", e))?;
 
         self.stream = Some(stream);
@@ -100,7 +98,7 @@ pub struct MacOSScreenCaptureFactory;
 
 impl ScreenCaptureFactory for MacOSScreenCaptureFactory {
     type Capture = MacOSScreenCapture;
-    
+
     fn create() -> Self::Capture {
         MacOSScreenCapture::new()
     }

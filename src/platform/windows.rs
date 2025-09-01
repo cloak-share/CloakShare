@@ -1,4 +1,4 @@
-use crate::platform::traits::{ScreenCapture, ScreenCaptureFactory, PixelConverter};
+use crate::platform::traits::{PixelConverter, ScreenCapture, ScreenCaptureFactory};
 use std::sync::{Arc, Mutex};
 
 /// Windows implementation (placeholder - not implemented)
@@ -37,7 +37,7 @@ pub struct WindowsScreenCaptureFactory;
 
 impl ScreenCaptureFactory for WindowsScreenCaptureFactory {
     type Capture = WindowsScreenCapture;
-    
+
     fn create() -> Self::Capture {
         WindowsScreenCapture::new()
     }

@@ -4,13 +4,13 @@ use std::sync::{Arc, Mutex};
 pub trait ScreenCapture {
     /// Start capturing the primary display
     fn start_capture(&mut self) -> Result<(), String>;
-    
+
     /// Get the latest captured frame as RGBA data (1920x1080x4 bytes)
     fn get_latest_frame(&self) -> Option<Vec<u8>>;
-    
+
     /// Stop screen capture
     fn stop_capture(&mut self);
-    
+
     /// Get the shared frame buffer for thread-safe access
     fn get_frame_buffer(&self) -> Arc<Mutex<Option<Vec<u8>>>>;
 }
@@ -18,7 +18,7 @@ pub trait ScreenCapture {
 /// Factory for creating platform-specific screen capture implementations
 pub trait ScreenCaptureFactory {
     type Capture: ScreenCapture;
-    
+
     /// Create a new screen capture instance
     fn create() -> Self::Capture;
 }
@@ -33,7 +33,7 @@ pub trait PixelConverter: Send + Sync {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
     MacOS,
-    Windows, 
+    Windows,
     Linux,
 }
 
@@ -42,14 +42,14 @@ impl Platform {
     pub fn current() -> Self {
         #[cfg(target_os = "macos")]
         return Platform::MacOS;
-        
+
         #[cfg(target_os = "windows")]
         return Platform::Windows;
-        
+
         #[cfg(target_os = "linux")]
         return Platform::Linux;
     }
-    
+
     /// Check if the platform is supported
     pub fn is_supported(&self) -> bool {
         match self {
