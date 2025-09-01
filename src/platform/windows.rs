@@ -21,7 +21,10 @@ impl ScreenCapture for WindowsScreenCapture {
         Err("Windows display resolution detection not implemented yet".to_string())
     }
 
-    fn start_capture(&mut self) -> Result<(), String> {
+    fn start_capture(
+        &mut self,
+        _exclude_window: Option<&winit::window::Window>,
+    ) -> Result<(), String> {
         Err("Windows screen capture not implemented yet".to_string())
     }
 

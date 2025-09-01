@@ -44,7 +44,10 @@ impl ScreenCapture for MacOSScreenCapture {
         Ok(DisplayResolution { width, height })
     }
 
-    fn start_capture(&mut self) -> Result<(), String> {
+    fn start_capture(
+        &mut self,
+        exclude_window: Option<&winit::window::Window>,
+    ) -> Result<(), String> {
         // Get shareable content + pick the main display
         let shareable = SCShareableContent::get()
             .map_err(|e| format!("Failed to get SCShareableContent: {:?}", e))?;
@@ -67,8 +70,25 @@ impl ScreenCapture for MacOSScreenCapture {
             resolution.width, resolution.height
         );
 
-        // Build a content filter for the display
-        let filter = SCContentFilter::new().with_display_excluding_windows(&display, &[]);
+        // Build a content filter for the display, excluding our app window if provided
+        let mut excluded_windows = Vec::new();
+
+        if exclude_window.is_some()
+            && std::env::var("CLOAK_SHARE_ENV").unwrap_or("development".to_string())
+                == "development"
+        {
+            // Find our window in the shareable content by title (only in development)
+            for sc_window in shareable.windows() {
+                if sc_window.title().contains("CloakShare") {
+                    println!("Excluding window: {}", sc_window.title());
+                    excluded_windows.push(sc_window);
+                }
+            }
+        }
+
+        let excluded_refs: Vec<&_> = excluded_windows.iter().collect();
+        let filter =
+            SCContentFilter::new().with_display_excluding_windows(&display, &excluded_refs);
 
         // Configure the stream with actual display resolution
         let config = SCStreamConfiguration::new()
